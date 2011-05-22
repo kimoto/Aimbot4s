@@ -553,7 +553,7 @@ BOOL SetGamma(double gamma)
 
 BOOL SetWindowTopMost(HWND hWnd)
 {
-	return ::SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOREDRAW | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOSENDCHANGING);
+	return SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_SHOWWINDOW|SWP_NOMOVE|SWP_NOSIZE);
 }
 
 LPTSTR sprintf_alloc(LPTSTR format, ...)

@@ -1,9 +1,14 @@
-﻿#include <Windows.h>
+﻿#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
 #include <tchar.h>
-#include "Util.h"
-#include "Screenshot.h"
+//#include <strsafe.h>
+// disable warning
+#pragma warning(disable : 4996) // ignore "recommend *_s functions warning"
+#pragma warning(disable : 4819) // ignore "character code problem warning"
 #include <opencv/cv.h>
 #include <opencv/highgui.h>
+#include "Util.h"
+#include "Screenshot.h"
 #pragma comment(lib, "opencv_core220.lib")
 #pragma comment(lib, "opencv_highgui220.lib")
 #pragma comment(lib, "opencv_legacy220.lib")
@@ -12,175 +17,91 @@
 #pragma comment(lib, "opencv_features2d220.lib")
 #pragma comment(lib, "opencv_flann220.lib")
 #pragma comment(lib, "opencv_imgproc220.lib")
+#pragma warning(default : 4996)
+#pragma warning(default : 4819)
+
+#define TICKTACK 180		// 200msec interval (WM_TIMER)
+#define SAFETY_VALVE 5000	// safety valve for this program
+#define WM_EMERGENCY_STOP (WM_USER_MESSAGE + 1)
+#define CV_DEBUG_WINDOW(IMGOBJ) {::cvNamedWindow("w"); ::cvShowImage("w", IMGOBJ); ::cvWaitKey(0);}
 
 HINSTANCE g_hInstance;
+HHOOK g_mouseHook = NULL;
 HWND g_hDlg;
+UINT_PTR g_timer = NULL;
+BOOL bWindowSelect = FALSE;
+HWND g_prevHighlightHwnd = NULL;
 
-BOOL bitmap_trancecode(HBITMAP hBitmap , IplImage *ipl_image) {
-	BITMAP bmp;
-	int x, y;
-	RGBQUAD *lpbits;
+void ExitDialog(HWND hWnd); // よく使うので宣言
 
-	GetObject( hBitmap, sizeof(BITMAP) ,&bmp );
-	lpbits = (RGBQUAD*)bmp.bmBits;
-
-	//IplImageから画像をコピー
-	//IplImageの色数が24bitではない場合や、
-	//横ピクセルが4の倍数じゃない場合などは修正が必要なハズ
-	for( y=0 ; y<bmp.bmHeight ; y++ ){       
-		for( x=0 ; x<bmp.bmWidth ; x++ ){
-			lpbits[(bmp.bmHeight-y-1)*bmp.bmWidth+x].rgbRed = ipl_image->imageData[(y*bmp.bmWidth+x)*3];
-			lpbits[(bmp.bmHeight-y-1)*bmp.bmWidth+x].rgbGreen = ipl_image->imageData[(y*bmp.bmWidth+x)*3+1];
-			lpbits[(bmp.bmHeight-y-1)*bmp.bmWidth+x].rgbBlue = ipl_image->imageData[(y*bmp.bmWidth+x)*3+2];
-		}
-	}
-	return TRUE;
-}
-
-bool recognizeCircleFromMemory(HBITMAP hBitmap, BITMAPINFO *pbmi, void **pbits,
-	RECT *windowRect, POINT *point)
+// 指定された画像から"円"を認識し、その中心点の座標(x,y)を返却します
+bool recognizeCircleFromMemory(HBITMAP hBitmap, int width, int height, POINT *point)
 {
-	int width = windowRect->right - windowRect->left;
-	int height = windowRect->bottom - windowRect->top;
-	IplImage *img = ::cvCreateImage(cvSize(width, height), IPL_DEPTH_8U, 3);
-	IplImage *img_gray = ::cvCreateImage(cvSize(width, height), IPL_DEPTH_8U, 1);
-	trace(L"#########: %d,%d\n", width, height);
+	IplImage *img		= ::cvCreateImage(cvSize(width, height), IPL_DEPTH_8U, 3); // rgb color array
+	IplImage *img_gray	= ::cvCreateImage(cvSize(width, height), IPL_DEPTH_8U, 1); // gray scale
 
 	RGBQUAD *lpbits; BITMAP bmp;
-	GetObject( hBitmap, sizeof(BITMAP) ,&bmp );
+	GetObject(hBitmap, sizeof(BITMAP) ,&bmp);
 	lpbits = (RGBQUAD*)bmp.bmBits;
+
 	for(int x=0; x<bmp.bmWidth; x++){
 		for(int y=0; y<bmp.bmHeight; y++){
 			int k = (y * img->widthStep) + (x * 3);
 			int j = (bmp.bmHeight-y-1) * bmp.bmWidth + x;
-
-			// 特定の赤色以外はすべて黒色にする
-			/*
-			img->imageData[k+0] = lpbits[(bmp.bmHeight-y-1)*bmp.bmWidth+x].rgbBlue;
-			img->imageData[k+1] = lpbits[(bmp.bmHeight-y-1)*bmp.bmWidth+x].rgbGreen;
-			img->imageData[k+2] = lpbits[(bmp.bmHeight-y-1)*bmp.bmWidth+x].rgbRed;
-			*/
 
 			if(!(lpbits[j].rgbRed == 255 || lpbits[j].rgbRed == 142)){
 				img->imageData[k+0] = (BYTE)255;
 				img->imageData[k+1] = (BYTE)255;
 				img->imageData[k+2] = (BYTE)255;
 			}
-			continue;
-
-			if( (lpbits[j].rgbRed == 205 && lpbits[j].rgbGreen == 205 && lpbits[j].rgbBlue == 255) ||
-				(lpbits[j].rgbRed == 164 && lpbits[j].rgbGreen == 164 && lpbits[j].rgbBlue == 205) ||
-				(lpbits[j].rgbRed == 0 && lpbits[j].rgbGreen == 0 && lpbits[j].rgbBlue == 0) ||
-				(lpbits[j].rgbRed == 123 && lpbits[j].rgbGreen == 123 && lpbits[j].rgbBlue == 154) ){
-				img->imageData[k+0] = (BYTE)255;
-				img->imageData[k+1] = (BYTE)255;
-				img->imageData[k+2] = (BYTE)255;
-			}else{
-				if((lpbits[j].rgbRed == 142) ||
-					(lpbits[j].rgbRed == 147 || lpbits[j].rgbGreen == 76 || lpbits[j].rgbBlue == 76 )){
-					img->imageData[k+0] = (BYTE)0;
-					img->imageData[k+1] = (BYTE)0;
-					img->imageData[k+2] = (BYTE)255;
-				}else{
-					img->imageData[k+0] = (BYTE)lpbits[(bmp.bmHeight-y-1)*bmp.bmWidth+x].rgbBlue;
-					img->imageData[k+1] = (BYTE)lpbits[(bmp.bmHeight-y-1)*bmp.bmWidth+x].rgbGreen;
-					img->imageData[k+2] = (BYTE)lpbits[(bmp.bmHeight-y-1)*bmp.bmWidth+x].rgbRed;
-				}
-			}
 		}
 	}
-	trace(L"converted bitmaps\n");
-	
+
 	// グレースケール化
 	::cvCvtColor(img, img_gray, CV_BGR2GRAY);
-	cvThreshold(img_gray, img_gray, 128, 255, CV_THRESH_BINARY);
-	//cvThreshold(img_gray, img_gray, 100, 255, CV_THRESH_BINARY);
-	
-	// (2)ハフ変換のための前処理（画像の平滑化を行なわないと誤検出が発生しやすい）
+
+	// 白と黒の二値化
+	::cvThreshold(img_gray, img_gray, 128, 255, CV_THRESH_BINARY);
+
+	// 画像の平滑化(円として認識しやすくするために)
 	cvSmooth(img_gray, img_gray, CV_GAUSSIAN, 11, 11, 0, 0);
 
-	/*
-	::cvNamedWindow("w");
-	::cvShowImage("w", img_gray);
-	::cvWaitKey(0);
-	*/
-
+	// デバッグ表示
+	//CV_DEBUG_WINDOW(img_gray);
+	
+	// Houghアルゴリズムによる円検出
 	CvMemStorage *storage = cvCreateMemStorage (0);
-
-	// (3)ハフ変換による円の検出と検出した円の描画
 	CvSeq *circles = cvHoughCircles (img_gray, storage, CV_HOUGH_GRADIENT,
-		1, // dp
-		150, // min_dist
-		30, 50, // param1-2
-		10, 80); // 検出すべき半径(min - max)
-	
-	
-	// 円が検出出来なかったとき
-	if(circles->total == 0){
-		cvReleaseImage(&img);
-		cvReleaseImage(&img_gray);
-		cvReleaseMemStorage(&storage);
-		return false;
-	}
-
-	if(circles->total >= 2){
-		cvReleaseImage(&img);
-		cvReleaseImage(&img_gray);
-		cvReleaseMemStorage(&storage);
-		return false;
-	}
-
-	for (int i=0; i<circles->total; i++) {
-		float *p = (float *)cvGetSeqElem (circles, i);
-		CvPoint pt = cvPoint(cvRound(p[0]), cvRound(p[1]));
-		// 最初に検出された円をクリック対象とする
-		point->x = pt.x;
-		point->y = pt.y;
-		break;
-	}
-
-	cvReleaseImage(&img);
-	cvReleaseImage(&img_gray);
-	cvReleaseMemStorage(&storage);
-	return true;
-}
-
-bool recognizeCircleFromFile(const char *file, const char *dumpfile, POINT *point, bool debug=false)
-{
-	IplImage *src_img_gray	= cvLoadImage(file, CV_LOAD_IMAGE_GRAYSCALE);
-	IplImage *src_img		= cvLoadImage(file, CV_LOAD_IMAGE_COLOR);
-
-	// グレースケール化
-	cvThreshold(src_img_gray, src_img_gray, 100, 255, CV_THRESH_BINARY);
-	
-	// (2)ハフ変換のための前処理（画像の平滑化を行なわないと誤検出が発生しやすい）
-	cvSmooth (src_img_gray, src_img_gray, CV_GAUSSIAN, 11, 11, 0, 0);
-	CvMemStorage *storage = cvCreateMemStorage (0);
-
-	// (3)ハフ変換による円の検出と検出した円の描画
-	CvSeq *circles = cvHoughCircles (src_img_gray, storage, CV_HOUGH_GRADIENT,
-		1, // dp
-		300, // min_dist
-		30, 50, // param1-2
-		10, 80); // 検出すべき半径(min - max)
+		1,			// dp
+		150,		// min_dist
+		30, 50,		// param1-2
+		10, 80);	// 検出すべき半径の大きさ(min, max)
 
 	// 円が検出出来なかったとき
 	if(circles->total != 1){
+		::DeleteObject(hBitmap);
+		cvReleaseMemStorage(&storage);
+		cvReleaseImage(&img);
+		cvReleaseImage(&img_gray);
 		return false;
 	}
 
+	// 最初に発見された円要素の座標を取得、返却
 	for (int i=0; i<circles->total; i++) {
 		float *p = (float *)cvGetSeqElem (circles, i);
 		CvPoint pt = cvPoint(cvRound(p[0]), cvRound(p[1]));
+
 		// 最初に検出された円をクリック対象とする
+		// (先ほどのif条件で実質一つの要素しかここに到達するときにはない)
 		point->x = pt.x;
 		point->y = pt.y;
 		break;
 	}
 
-	cvReleaseImage(&src_img);
-	cvReleaseImage(&src_img_gray);
+	::DeleteObject(hBitmap);
 	cvReleaseMemStorage(&storage);
+	cvReleaseImage(&img);
+	cvReleaseImage(&img_gray);
 	return true;
 }
 
@@ -196,7 +117,7 @@ BOOL HighlightWindow(HWND hWnd)
 
 	HGDIOBJ hPrevPen = ::SelectObject(hdc, hPen);
 	HGDIOBJ hPrevBrush = ::SelectObject(hdc, hBrush);
-	
+
 	RECT rect;
 	::GetWindowRect(hWnd, &rect);
 	::Rectangle(hdc, 0, 0, rect.right - rect.left, rect.bottom - rect.top);
@@ -211,35 +132,44 @@ BOOL HighlightWindow(HWND hWnd)
 	return TRUE;
 }
 
-bool SetCursor2Circle(HWND h)
+void SetCursorPosAndClick(POINT *point)
+{
+	::SetCursorPos(point->x, point->y);
+	::mouse_event(MOUSEEVENTF_LEFTDOWN, point->x, point->y, 0, 0);
+}
+
+// 指定したウインドウ内にある「円っぽいものにマウスカーソルを移動してクリックします」
+BOOL SetCursor2CircleAndClick(HWND h)
 {
 	// Shootのウインドウ座標を取得します
 	RECT windowRect;
 	::GetWindowRect(h, &windowRect);
-	//::Screenshot::ScreenshotDesktop(L"capture.png", &windowRect);
 
-	// メモリ上にスクリーンショットを撮影します
-	void *pbits = NULL;
-	BITMAPINFO bmi = {0};
-	HBITMAP hBitmap = ::Screenshot::ScreenshotMemoryWindow(::GetDesktopWindow(), &bmi, &pbits, &windowRect);
+	// メモリ上に画像としてキャプチャします
+	HBITMAP hBitmap = ::Screenshot::ScreenshotInMemory(::GetDesktopWindow(), &windowRect);
+	if(hBitmap == NULL){
+		::ShowLastError();
+		::ExitDialog(h);
+		return FALSE;
+	}
+
+	int width	= windowRect.right - windowRect.left;
+	int height	= windowRect.bottom - windowRect.top;
+
+	// キャプチャした画像から、円を検出してその場所にマウスを移動して
+	// クリックイベントを送出します
 	POINT point = {0};
-	
-	if( ::recognizeCircleFromMemory(hBitmap, &bmi, &pbits, &windowRect, &point) ){
-		// 成功したときだけ移動
-		point.x += windowRect.left;
-		point.y += windowRect.top;
-		::SetCursorPos(point.x, point.y);
-		::mouse_event(MOUSEEVENTF_LEFTDOWN, point.x, point.y, 0, 0);
-
+	if( ::recognizeCircleFromMemory(hBitmap, width, height, &point) ){
+		::ClientToScreen(h, &point);
+		::SetCursorPosAndClick(&point);
 		::DeleteObject(hBitmap);
-		return true;
+		return TRUE;
 	}
 
 	::DeleteObject(hBitmap);
-	return false;
+	return FALSE;
 }
 
-HHOOK g_mouseHook = NULL;
 LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wp, LPARAM lp)
 {
 	if( nCode < 0 ) //nCodeが負、HC_NOREMOVEの時は何もしない
@@ -254,102 +184,166 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wp, LPARAM lp)
 
 		if( wp == WM_LBUTTONDOWN || wp == WM_LBUTTONUP ||
 			wp == WM_RBUTTONDOWN || wp == WM_RBUTTONUP ){
-			::PostMessage(g_hDlg, wp, 0, MAKELPARAM(msg->pt.x, msg->pt.y));
-			return TRUE;
+				::PostMessage(g_hDlg, wp, 0, MAKELPARAM(msg->pt.x, msg->pt.y));
+				return TRUE;
 		}
 	}
 	return CallNextHookEx(::g_mouseHook, nCode, 0, lp);
 }
 
+// 強制終了用のキーフック仕込む関数
+void StartEmergencyExitKeyHook(HWND hWnd)
+{
+	::SetWindowHandle(hWnd);
+
+	KEYINFO keyInfo;
+	::QuickSetKeyInfo(&keyInfo, KEY_NOT_SET, VK_ESCAPE);	// ESCAPEキーで強制終了
+	::RegistKey(keyInfo, WM_EMERGENCY_STOP);					// 入力を検知したときのメッセージ
+
+	if( !::StartHook() ){
+		::ShowLastError();
+		::PostQuitMessage(0);
+	}
+}
+
+// 強制終了用のキーフックを解放する関数
+void StopEmergencyExitKeyHook(HWND hWnd)
+{
+	if( !::StopHook() ){
+		::ShowLastError();
+		::PostQuitMessage(0);
+	}
+}
+
+BOOL IsWindowInspectMode()
+{
+	return ::bWindowSelect;
+}
+
+void StartAutoAimTimer(HWND hWnd)
+{
+	if(g_timer == NULL){
+		g_timer = ::SetTimer(hWnd, 0, TICKTACK, NULL);
+	}else{
+		::ErrorMessageBox(L"すでに実行中です");
+	}
+}
+
+void StopAutoAimTimer(HWND hWnd)
+{
+	if(g_timer){
+		::KillTimer(hWnd, g_timer);
+	}
+}
+
+void InitDialog(HWND hWnd)
+{
+	::SetWindowTopMost(hWnd);
+	::StartEmergencyExitKeyHook(hWnd);
+}
+
+void ExitDialog(HWND hWnd)
+{
+	::StopAutoAimTimer(hWnd);
+	::StopEmergencyExitKeyHook(hWnd);
+	::EndDialog(hWnd, (INT_PTR)TRUE);
+	::PostQuitMessage(0);
+}
+
+void StartWindowInspect(HWND hWnd)
+{
+	::bWindowSelect = TRUE;
+	g_mouseHook = ::SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, g_hInstance, 0);
+	if(!g_mouseHook){
+		::ShowLastError();
+		::ExitDialog(hWnd);
+	}
+}
+
+void EndWindowInspect(HWND hWnd)
+{
+	if(::g_mouseHook){
+		if(!::UnhookWindowsHookEx(::g_mouseHook))
+			::ShowLastError();
+	}
+
+	::NoticeRedraw(hWnd);
+	::NoticeRedraw(g_prevHighlightHwnd);
+	g_prevHighlightHwnd = NULL;
+
+	bWindowSelect = FALSE;
+}
+
+void HighlightCursorPosWindow(HWND hWnd)
+{
+	if( HWND h = ::WindowFromCursorPos() ){
+		::HighlightWindow(h);
+
+		if(h != g_prevHighlightHwnd){
+			::NoticeRedraw(g_prevHighlightHwnd);
+		}
+
+		g_prevHighlightHwnd = h;
+	}else{
+		::ShowLastError();
+		::ExitDialog(hWnd);
+	}
+}
+
+void AimBOTInCursorPosWindow()
+{
+	::SetCursor2CircleAndClick(::WindowFromCursorPos());
+}
+
 INT_PTR CALLBACK DlgProc(HWND hDlg, UINT msg, WPARAM wp, LPARAM lp)
 {
-	static UINT_PTR timer = NULL;
-	static HWND prevHighlightHwnd = NULL;
-	static BOOL bWindowSelect = FALSE;
-	static HWND targetWindow = NULL;
-	static int counter = 0;
+	static int safetyValveCounter = 0;
 
 	switch(msg){
 	case WM_INITDIALOG:
-		::SetWindowHandle(hDlg);
+		::InitDialog(hDlg);
+		return TRUE;
 
-		KEYINFO keyInfo;
-		::QuickSetKeyInfo(&keyInfo, KEY_NOT_SET, VK_ESCAPE); // ESCAPEキーで強制終了
-		::RegistKey(keyInfo, WM_USER_MESSAGE);
-		if( !::StartHook() ){
-			::ShowLastError();
-			::PostQuitMessage(0);
-		}
-		::SetWindowTopMost(hDlg);
-		return TRUE;
 	case WM_CLOSE:
-		::StopHook();
+	case WM_EMERGENCY_STOP:
+		::ExitDialog(hDlg);
 		return TRUE;
-	case WM_USER_MESSAGE:
-		::StopHook();
-		::PostQuitMessage(0);
-		return TRUE;
-	case WM_TIMER:
-		trace(L"WM_TIMER\n");
-		if(counter++ > 5000){
-			::PostQuitMessage(0);
+
+	case WM_TIMER: // each TICKTACK(default: each 200ms)
+		if(safetyValveCounter++ > SAFETY_VALVE){
+			::ExitDialog(hDlg);
 		}else{
-			SetCursor2Circle(targetWindow);
+			::AimBOTInCursorPosWindow();
 		}
 		return TRUE;
+
 	case WM_COMMAND:
 		switch(LOWORD(wp)){
 		case IDOK:
-			bWindowSelect = TRUE;
-			g_mouseHook = ::SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, g_hInstance, 0);
-			if(!g_mouseHook){
-				::ShowLastError();
-				::DestroyWindow(hDlg);
+			if( !::IsWindowInspectMode() ) {
+				::StartWindowInspect(hDlg);
 			}
+			return TRUE;
+		case IDCANCEL: // if click close button
+			::ExitDialog(hDlg);
 			return TRUE;
 		}
 		return TRUE;
-	case WM_RBUTTONDOWN:
-	case WM_RBUTTONUP:
-		if(timer != NULL)
-			::KillTimer(hDlg, timer);
-		if(::g_mouseHook){
-			if(!::UnhookWindowsHookEx(::g_mouseHook))
-				::ShowLastError();
-		}
-		bWindowSelect = FALSE;
-		//EndDialog(hDlg, LOWORD(wp));
-		::PostQuitMessage(0);
-		return TRUE;
+
 	case WM_LBUTTONUP:
-		if(bWindowSelect){
-			if(::g_mouseHook){
-				if(!::UnhookWindowsHookEx(::g_mouseHook))
-					::ShowLastError();
-			}
+		if( ::IsWindowInspectMode() ){
+			::EndWindowInspect(hDlg);
+
 			::MessageBeep(MB_ICONASTERISK);
-
-			::ReleaseCapture();
-			::NoticeRedraw(hDlg);
-			::NoticeRedraw(prevHighlightHwnd);
-			prevHighlightHwnd = NULL;
-			bWindowSelect = FALSE;
-
-			// メイン処理
-			targetWindow = ::WindowFromCursorPos();
-			::SetCursor2Circle(targetWindow);
-			timer = ::SetTimer(hDlg, 0, 180, NULL);
+			::StartAutoAimTimer(hDlg);
 		}
-		break;
+		return TRUE;
+
 	case WM_MOUSEMOVE:
-		if(bWindowSelect){
-			HWND h = ::WindowFromCursorPos();
-			::HighlightWindow(h);
-			if(h != prevHighlightHwnd)
-				::NoticeRedraw(prevHighlightHwnd);
-			prevHighlightHwnd = h;
+		if( ::IsWindowInspectMode() ){
+			::HighlightCursorPosWindow(hDlg);
 		}
-		break;
+		return TRUE;
 	}
 	return FALSE;
 }
@@ -371,5 +365,5 @@ int APIENTRY _tWinMain(HINSTANCE hInstance,
 		::TranslateMessage(&msg);
 		::DispatchMessage(&msg);
 	}
-	return 0;
+	return 0; // not reach
 }

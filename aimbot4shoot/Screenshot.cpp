@@ -254,6 +254,13 @@ HBITMAP Screenshot::ScreenshotMemoryWindow(HWND window, BITMAPINFO *pbmi, void *
 	return hBitmap;
 }
 
+HBITMAP Screenshot::ScreenshotInMemory(HWND window, RECT *rect)
+{
+	BITMAPINFO bmi = {0};
+	void *pbits = NULL;
+	return GetBitmapFromWindow(window, &bmi, &pbits, rect);
+}
+
 // Desktopのスクリーンショットを撮影してファイルに保存します
 BOOL Screenshot::ScreenshotDesktop(LPCTSTR fileName, RECT *rect)
 {

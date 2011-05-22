@@ -23,5 +23,5 @@ public:
 	static HBITMAP GetBitmapFromWindow(HWND window, BITMAPINFO *pbmi, void **pbits);
 	static HBITMAP GetBitmapFromWindow(HWND window, BITMAPINFO *pbmi, void **pbits, RECT *rect);
 	static HBITMAP ScreenshotMemoryWindow(HWND window, BITMAPINFO *pbmi, void **pbits, RECT *rect);
-
+	static HBITMAP Screenshot::ScreenshotInMemory(HWND window, RECT *rect);
 };
