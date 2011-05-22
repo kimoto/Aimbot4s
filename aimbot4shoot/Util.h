@@ -36,6 +36,8 @@
 
 #define DUPLICATE_BOOT_CHECK(MUTEX_NAME) DuplicateBootCheck(MUTEX_NAME)
 
+#define SafeDeleteObject(gdiobj) gdiobj != NULL && ::DeleteObject(gdiobj)
+
 void trace(LPCTSTR format, ...);
 void FillRectBrush(HDC hdc, int x, int y, int width, int height, COLORREF color);
 void BorderedRect(HDC hdc, int x, int y, int width, int height, COLORREF color);
@@ -102,6 +104,11 @@ BOOL HighlightWindow(HWND hWnd, int bold, COLORREF color);
 BOOL HighlightWindow(HWND hWnd);
 
 void DuplicateBootCheck(LPCTSTR mutexName);
+
+void ShadowTextFormatOut(HDC hdc, int x, int y, int w, COLORREF shadow, COLORREF color, LPCTSTR format, ...);
+
+void StickRect(RECT *selected, RECT *target, int w_px, int h_px);
+void CorrectRect(RECT *selected, RECT *target);
 
 // 多重起動防止用簡易クラス
 #include <exception>
