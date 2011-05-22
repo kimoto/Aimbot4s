@@ -15,13 +15,15 @@ LPVOID GlobalAllocHeap(UINT flags, SIZE_T size)
 
 void trace(LPCTSTR format, ...)
 {
+#ifdef _DEBUG
 	va_list arg;
 	va_start(arg, format);
 	
 	TCHAR buffer[TRACE_BUFFER_SIZE];
-	::_vsnwprintf_s(buffer, TRACE_BUFFER_SIZE, TRACE_BUFFER_SIZE, format, arg);
+	::_vsnwprintf_s(buffer, TRACE_BUFFER_SIZE, _TRUNCATE, format, arg);
 	::OutputDebugString(buffer);	
 	va_end(arg);
+#endif
 }
 
 void DrawFormatText(HDC hdc, LPRECT rect, UINT type, LPCTSTR format, ...)
@@ -30,7 +32,7 @@ void DrawFormatText(HDC hdc, LPRECT rect, UINT type, LPCTSTR format, ...)
 	va_start(arg, format);
 	
 	TCHAR buffer[TRACE_BUFFER_SIZE];
-	::_vsnwprintf_s(buffer, TRACE_BUFFER_SIZE, TRACE_BUFFER_SIZE, format, arg);
+	::_vsnwprintf_s(buffer, TRACE_BUFFER_SIZE, _TRUNCATE, format, arg);
 	::DrawText(hdc, buffer, lstrlen(buffer), rect, type);	
 	va_end(arg);
 }
@@ -41,7 +43,7 @@ void TextFormatOut(HDC hdc, int x, int y, LPCTSTR format, ...)
 	va_start(arg, format);
 	
 	TCHAR buffer[FORMAT_BUFFER_SIZE];
-	::_vsnwprintf_s(buffer, FORMAT_BUFFER_SIZE, FORMAT_BUFFER_SIZE, format, arg);
+	::_vsnwprintf_s(buffer, FORMAT_BUFFER_SIZE, _TRUNCATE, format, arg);
 	::TextOut(hdc, x, y, buffer, lstrlen(buffer));
 	va_end(arg);
 }
@@ -456,7 +458,7 @@ void ErrorMessageBox(LPCTSTR format, ...)
 	va_start(arg, format);
 
 	TCHAR buffer[TRACE_BUFFER_SIZE];
-	::_vsnwprintf_s(buffer, TRACE_BUFFER_SIZE, TRACE_BUFFER_SIZE, format, arg);
+	::_vsnwprintf_s(buffer, TRACE_BUFFER_SIZE, _TRUNCATE, format, arg);
 	::MessageBox(NULL, buffer, L"Error", MB_OK);
 	va_end(arg);
 }
@@ -562,7 +564,7 @@ LPTSTR sprintf_alloc(LPTSTR format, ...)
 	va_start(arg, format);
 	
 	LPTSTR buffer = (LPTSTR)::GlobalAllocHeap(GMEM_FIXED | GMEM_ZEROINIT, TRACE_BUFFER_SIZE * sizeof(TCHAR));
-	::_vsnwprintf_s(buffer, TRACE_BUFFER_SIZE, TRACE_BUFFER_SIZE, format, arg);
+	::_vsnwprintf_s(buffer, TRACE_BUFFER_SIZE, _TRUNCATE, format, arg);
 	va_end(arg);
 
 	return buffer;
@@ -574,7 +576,7 @@ BOOL SetWindowTextFormat(HWND hWnd, LPTSTR format, ...)
 	va_start(arg, format);
 
 	TCHAR buffer[TRACE_BUFFER_SIZE];
-	::_vsnwprintf_s(buffer, TRACE_BUFFER_SIZE, TRACE_BUFFER_SIZE, format, arg);
+	::_vsnwprintf_s(buffer, TRACE_BUFFER_SIZE, _TRUNCATE, format, arg);
 	::SetWindowText(hWnd, buffer);
 	va_end(arg);
 
@@ -907,4 +909,81 @@ LPTSTR GetKeyInfoString(KEYINFO *keyInfo)
 	::GlobalFree(shift);
 	::GlobalFree(key);
 	return buffer;
+}
+
+HHOOK g_mouseProxyHook = NULL;
+HWND g_mouseProxyHwnd = NULL;
+LRESULT CALLBACK MouseEventProxyHook(int nCode, WPARAM wp, LPARAM lp)
+{
+	if( nCode < 0 ) //nCodeが負、HC_NOREMOVEの時は何もしない
+		return CallNextHookEx(g_mouseProxyHook, nCode, wp, lp );
+
+	if( nCode == HC_ACTION){
+		MSLLHOOKSTRUCT *msg = (MSLLHOOKSTRUCT *)lp;
+		if( wp == WM_MOUSEMOVE ){
+			::PostMessage(g_mouseProxyHwnd, wp, 0, MAKELPARAM(msg->pt.x, msg->pt.y));
+			return CallNextHookEx(::g_mouseProxyHook, nCode, 0, lp);
+		}
+
+		if( wp == WM_LBUTTONDOWN || wp == WM_LBUTTONUP ||
+			wp == WM_RBUTTONDOWN || wp == WM_RBUTTONUP ){
+				::PostMessage(g_mouseProxyHwnd, wp, 0, MAKELPARAM(msg->pt.x, msg->pt.y));
+				return TRUE;
+		}
+	}
+	return CallNextHookEx(::g_mouseProxyHook, nCode, 0, lp);
+}
+
+BOOL StartMouseEventProxy(HWND hWnd, HINSTANCE hInstance)
+{
+	::g_mouseProxyHwnd = hWnd;
+	::g_mouseProxyHook = ::SetWindowsHookEx(WH_MOUSE_LL, MouseEventProxyHook, hInstance, 0);
+	if(!::g_mouseProxyHook){
+		return FALSE;
+	}
+	return TRUE;
+}
+
+BOOL StopMouseEventProxy()
+{
+	if(g_mouseProxyHook){
+		if(!UnhookWindowsHookEx(g_mouseProxyHook)){
+			return FALSE;
+		}
+		g_mouseProxyHook = NULL;
+	}
+	::g_mouseProxyHwnd = NULL;
+	return TRUE;
+}
+
+BOOL HighlightWindow(HWND hWnd, int bold, COLORREF color)
+{
+	HDC hdc = ::GetWindowDC(hWnd);
+	if(hdc == NULL){
+		return FALSE;
+	}
+
+	HPEN hPen = CreatePen(PS_SOLID, bold, color);
+	HBRUSH hBrush = (HBRUSH)::GetStockObject(HOLLOW_BRUSH);
+
+	HGDIOBJ hPrevPen = ::SelectObject(hdc, hPen);
+	HGDIOBJ hPrevBrush = ::SelectObject(hdc, hBrush);
+
+	RECT rect;
+	::GetWindowRect(hWnd, &rect);
+	::Rectangle(hdc, 0, 0, rect.right - rect.left, rect.bottom - rect.top);
+
+	::SelectObject(hdc, hPrevPen);
+	::SelectObject(hdc, hPrevBrush);
+
+	::DeleteObject(hPen);
+	::DeleteObject(hBrush);
+
+	::ReleaseDC(hWnd, hdc);
+	return TRUE;
+}
+
+BOOL HighlightWindow(HWND hWnd)
+{
+	return ::HighlightWindow(hWnd, 5, RGB(0,0,0));
 }

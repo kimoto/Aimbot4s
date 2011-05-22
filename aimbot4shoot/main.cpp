@@ -105,33 +105,6 @@ bool recognizeCircleFromMemory(HBITMAP hBitmap, int width, int height, POINT *po
 	return true;
 }
 
-BOOL HighlightWindow(HWND hWnd)
-{
-	HDC hdc = ::GetWindowDC(hWnd);
-	if(hdc == NULL){
-		return FALSE;
-	}
-
-	HPEN hPen = CreatePen(PS_SOLID, 5, RGB(0, 0, 0));
-	HBRUSH hBrush = (HBRUSH)::GetStockObject(HOLLOW_BRUSH);
-
-	HGDIOBJ hPrevPen = ::SelectObject(hdc, hPen);
-	HGDIOBJ hPrevBrush = ::SelectObject(hdc, hBrush);
-
-	RECT rect;
-	::GetWindowRect(hWnd, &rect);
-	::Rectangle(hdc, 0, 0, rect.right - rect.left, rect.bottom - rect.top);
-
-	::SelectObject(hdc, hPrevPen);
-	::SelectObject(hdc, hPrevBrush);
-
-	::DeleteObject(hPen);
-	::DeleteObject(hBrush);
-
-	::ReleaseDC(hWnd, hdc);
-	return TRUE;
-}
-
 void SetCursorPosAndClick(POINT *point)
 {
 	::SetCursorPos(point->x, point->y);
@@ -168,27 +141,6 @@ BOOL SetCursor2CircleAndClick(HWND h)
 
 	::DeleteObject(hBitmap);
 	return FALSE;
-}
-
-LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wp, LPARAM lp)
-{
-	if( nCode < 0 ) //nCodeが負、HC_NOREMOVEの時は何もしない
-		return CallNextHookEx(g_mouseHook, nCode, wp, lp );
-
-	if( nCode == HC_ACTION){
-		MSLLHOOKSTRUCT *msg = (MSLLHOOKSTRUCT *)lp;
-		if( wp == WM_MOUSEMOVE ){
-			::PostMessage(g_hDlg, wp, 0, MAKELPARAM(msg->pt.x, msg->pt.y));
-			return CallNextHookEx(::g_mouseHook, nCode, 0, lp);
-		}
-
-		if( wp == WM_LBUTTONDOWN || wp == WM_LBUTTONUP ||
-			wp == WM_RBUTTONDOWN || wp == WM_RBUTTONUP ){
-				::PostMessage(g_hDlg, wp, 0, MAKELPARAM(msg->pt.x, msg->pt.y));
-				return TRUE;
-		}
-	}
-	return CallNextHookEx(::g_mouseHook, nCode, 0, lp);
 }
 
 // 強制終了用のキーフック仕込む関数
@@ -253,19 +205,14 @@ void ExitDialog(HWND hWnd)
 void StartWindowInspect(HWND hWnd)
 {
 	::bWindowSelect = TRUE;
-	g_mouseHook = ::SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, g_hInstance, 0);
-	if(!g_mouseHook){
+	if( !::StartMouseEventProxy(hWnd, ::g_hInstance) )
 		::ShowLastError();
-		::ExitDialog(hWnd);
-	}
 }
 
 void EndWindowInspect(HWND hWnd)
 {
-	if(::g_mouseHook){
-		if(!::UnhookWindowsHookEx(::g_mouseHook))
-			::ShowLastError();
-	}
+	if(!::StopMouseEventProxy())
+		::ShowLastError();
 
 	::NoticeRedraw(hWnd);
 	::NoticeRedraw(g_prevHighlightHwnd);

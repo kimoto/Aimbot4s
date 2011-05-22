@@ -1,3 +1,4 @@
+#pragma once
 #include <Windows.h>
 #include <string>
 #include <GdiPlus.h>
@@ -13,15 +14,26 @@ public:
 	Screenshot();
 	~Screenshot();
 
-	static BOOL ScreenshotDesktop(LPCTSTR fileName);
-	static BOOL ScreenshotDesktop(LPCTSTR fileName, RECT *rect);
-	static BOOL ScreenshotWindow(LPCTSTR fileName, HWND window, RECT *rect);
-	static BOOL SaveToFileAutoDetectFormat(HBITMAP hBitmap, LPCTSTR fileName);
-	static BOOL GetClsidEncoderFromFileName(LPCTSTR fileName, LPCLSID lpClsid);
-	static BOOL GetClsidEncoderFromMimeType(LPCTSTR format, LPCLSID lpClsid);
-	static BOOL SaveBitmapToFile(HBITMAP hBitmap, BITMAPINFO *pbmi, void *pbits, LPCTSTR fileName);
-	static HBITMAP GetBitmapFromWindow(HWND window, BITMAPINFO *pbmi, void **pbits);
-	static HBITMAP GetBitmapFromWindow(HWND window, BITMAPINFO *pbmi, void **pbits, RECT *rect);
-	static HBITMAP ScreenshotMemoryWindow(HWND window, BITMAPINFO *pbmi, void **pbits, RECT *rect);
+	// 指定されたウインドウのビットマップ情報を取得して返却します
+	static HBITMAP Screenshot::GetBitmapFromWindow(HWND window, BITMAPINFO *pbmi, void **pbits, RECT *rect);
+
+	// MIME-TYPEをもとにEncoderを取得します
+	static BOOL Screenshot::GetClsidEncoderFromMimeType(LPCTSTR format, LPCLSID lpClsid);
+
+	// ファイル名をもとに、Enocderを取得します
+	static BOOL Screenshot::GetClsidEncoderFromFileName(LPCTSTR fileName, LPCLSID lpClsid);
+
+	// 指定されたファイル名で、hBitmapを保存します
+	static BOOL Screenshot::SaveToFileAutoDetectFormat(HBITMAP hBitmap, LPCTSTR fileName);
+
+	// 指定のウインドウの、指定の範囲をスクリーンショットします
+	static BOOL Screenshot::ScreenshotWindow(LPCTSTR fileName, HWND window, RECT *rect);
+
+	// ファイルに保存せず、HBITMAP形式で返却します
 	static HBITMAP Screenshot::ScreenshotInMemory(HWND window, RECT *rect);
+
+	// Desktopのスクリーンショットを撮影してファイルに保存します
+	static BOOL Screenshot::ScreenshotDesktop(LPCTSTR fileName, RECT *rect);
 };
+
+

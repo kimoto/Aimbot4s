@@ -90,6 +90,15 @@ void WritePrivateProfileKeyInfo(LPCTSTR section, LPCTSTR baseKeyName, KEYINFO *k
 void QuickSetKeyInfo(KEYINFO *info, int optKey, int key);
 LPTSTR GetKeyInfoString(KEYINFO *keyInfo);
 
+// mouse proxy
+LRESULT CALLBACK MouseEventProxyHook(int nCode, WPARAM wp, LPARAM lp);
+BOOL StartMouseEventProxy(HWND hWnd, HINSTANCE hInstance);
+BOOL StopMouseEventProxy();
+
+// window manipulate
+BOOL HighlightWindow(HWND hWnd, int bold, COLORREF color);
+BOOL HighlightWindow(HWND hWnd);
+
 // 多重起動防止用簡易クラス
 #include <exception>
 class CMutex{
