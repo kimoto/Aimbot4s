@@ -24,6 +24,7 @@
 #define SAFETY_VALVE 5000	// safety valve for this program
 #define WM_EMERGENCY_STOP (WM_USER_MESSAGE + 1)
 #define CV_DEBUG_WINDOW(IMGOBJ) {::cvNamedWindow("w"); ::cvShowImage("w", IMGOBJ); ::cvWaitKey(0);}
+#define MUTEX_NAME L"AimBOT4S"
 
 HINSTANCE g_hInstance;
 HHOOK g_mouseHook = NULL;
@@ -300,6 +301,8 @@ int APIENTRY _tWinMain(HINSTANCE hInstance,
 	LPTSTR lpCmdLine,
 	int nCmdShow)
 {
+	::DuplicateBootCheck(MUTEX_NAME);
+
 	g_hInstance = hInstance;
 	g_hDlg = CreateDialog(hInstance, L"IDD_MAIN_DIALOG", NULL, DlgProc);
 

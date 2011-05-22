@@ -987,3 +987,14 @@ BOOL HighlightWindow(HWND hWnd)
 {
 	return ::HighlightWindow(hWnd, 5, RGB(0,0,0));
 }
+
+void DuplicateBootCheck(LPCTSTR mutexName)
+{
+	CMutex mutex;
+	try{
+		mutex.createMutex(mutexName);
+	}catch(std::exception e){
+		::ErrorMessageBox(L"多重起動です");
+		exit(0);
+	}
+}

@@ -34,6 +34,8 @@
 	#define DLLEXPORT extern "C" __declspec(dllimport)
 #endif
 
+#define DUPLICATE_BOOT_CHECK(MUTEX_NAME) DuplicateBootCheck(MUTEX_NAME)
+
 void trace(LPCTSTR format, ...);
 void FillRectBrush(HDC hdc, int x, int y, int width, int height, COLORREF color);
 void BorderedRect(HDC hdc, int x, int y, int width, int height, COLORREF color);
@@ -98,6 +100,8 @@ BOOL StopMouseEventProxy();
 // window manipulate
 BOOL HighlightWindow(HWND hWnd, int bold, COLORREF color);
 BOOL HighlightWindow(HWND hWnd);
+
+void DuplicateBootCheck(LPCTSTR mutexName);
 
 // 多重起動防止用簡易クラス
 #include <exception>
